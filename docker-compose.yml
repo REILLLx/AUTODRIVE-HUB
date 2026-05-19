@@ -1,0 +1,77 @@
+services:
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    healthcheck:
+      test: ["CMD", "kafka-topics", "--bootstrap-server", "localhost:9092", "--list"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+
+  postgres:
+    image: postgres:15
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: root
+      POSTGRES_DB: ev_telemetry_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db_init/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d ev_telemetry_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  dashboard:
+    build: .
+    ports:
+      - "5000:5000"
+    environment:
+      DB_CONF: "host=postgres dbname=ev_telemetry_db user=admin password=root port=5432"
+      KAFKA_BOOTSTRAP: "kafka:9092"
+      GOOGLE_API_KEY: "${GOOGLE_API_KEY}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    volumes:
+      - ./ev_model.keras:/app/ev_model.keras
+      - ./scaler.gz:/app/scaler.gz
+      - ./synthetic_ev_data_send.csv:/app/synthetic_ev_data_send.csv
+      - ./knowledge_base.md:/app/knowledge_base.md
+
+  receiver:
+    build: .
+    command: python receiver.py
+    environment:
+      DB_CONF: "host=postgres dbname=ev_telemetry_db user=admin password=root port=5432"
+      KAFKA_BOOTSTRAP: "kafka:9092"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    volumes:
+      - ./ev_model.keras:/app/ev_model.keras
+      - ./scaler.gz:/app/scaler.gz
+
+volumes:
+  postgres_data:

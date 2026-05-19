@@ -1,0 +1,78 @@
+@import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Exo+2:wght@300;400;600;700&display=swap');
+@import 'leaflet/dist/leaflet.css';
+
+:root {
+  --bg:     #080c10;
+  --panel:  #0d1520;
+  --border: #1a2a3a;
+  --accent: #00e5ff;
+  --green:  #00ff88;
+  --amber:  #ffb300;
+  --red:    #ff3d3d;
+  --purple: #b388ff;
+  --text:   #c8dae8;
+  --muted:  #4a6070;
+  --mono:   'Share Tech Mono', monospace;
+  --sans:   'Exo 2', sans-serif;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  height: 100vh;
+  display: grid;
+  grid-template-rows: 56px 1fr;
+  overflow: hidden;
+}
+
+#app { display: contents; }
+
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+.s-section {
+  border-bottom: 1px solid var(--border);
+  padding: 12px 14px;
+  flex-shrink: 0;
+}
+.s-section.grow {
+  flex: 1; overflow: hidden;
+  display: flex; flex-direction: column;
+  border-bottom: none;
+}
+.s-title {
+  font-family: var(--mono); font-size: .62rem;
+  letter-spacing: .2em; color: var(--muted);
+  text-transform: uppercase; margin-bottom: 10px;
+}
+
+.scroll-list { overflow-y: auto; flex: 1; padding: 4px; }
+.no-data { font-size: .7rem; color: var(--muted); padding: 8px; text-align: center; }
+
+@keyframes pulse    { 0%,100%{opacity:1} 50%{opacity:.3} }
+@keyframes fadeIn   { from{opacity:0;transform:translateY(-4px)} to{opacity:1;transform:none} }
+@keyframes msgIn    { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:none} }
+@keyframes chatSlideIn {
+  from { opacity:0; transform: translateY(16px) scale(.97); }
+  to   { opacity:1; transform: none; }
+}
+@keyframes markerPulse {
+  0%  { transform:scale(1); }
+  50% { transform:scale(1.3); }
+  100%{ transform:scale(1); }
+}
+
+.car-marker {
+  width:32px; height:32px; border-radius:50%;
+  border:2px solid var(--green); background:rgba(0,255,136,.15);
+  display:flex; align-items:center; justify-content:center;
+  font-size:14px; box-shadow:0 0 12px rgba(0,255,136,.4); cursor:pointer;
+}
+.car-marker.warn  { border-color:var(--amber); background:rgba(255,179,0,.15); box-shadow:0 0 12px rgba(255,179,0,.4); }
+.car-marker.error { border-color:var(--red);   background:rgba(255,61,61,.15);  box-shadow:0 0 12px rgba(255,61,61,.4); }
+.car-marker.moving { animation: markerPulse .6s ease; }
+
+.leaflet-container { background: #080c10 !important; }
