@@ -1,5 +1,5 @@
 <template>
-  <div class="chat-overlay" :class="{ open: visible }" @click.self="$emit('close')">
+  <div v-show="expanded" class="chat-overlay">
     <div class="chat-panel">
 
       <div class="chat-header">
@@ -7,7 +7,10 @@
           <div class="chat-title">🤖 AI Асистент{{ dtcCode ? ` — ${dtcCode}` : '' }}</div>
           <div class="chat-subtitle">{{ subtitle }}</div>
         </div>
-        <button class="chat-close" @click="$emit('close')">✕</button>
+        <div class="header-btns">
+          <button class="chat-btn" title="Згорнути" @click="$emit('minimize')">—</button>
+          <button class="chat-btn close" title="Закрити" @click="$emit('close')">✕</button>
+        </div>
       </div>
 
       <div ref="msgBox" class="chat-messages">
@@ -39,14 +42,14 @@
 </template>
 
 <script setup>
-import { ref, watch, nextTick } from 'vue'
+import { ref, watch, onMounted, nextTick } from 'vue'
 
 const props = defineProps({
-  visible:   { type: Boolean, default: false },
+  expanded:  { type: Boolean, default: false },
   vehicleId: { type: String,  default: '' },
   dtcCode:   { type: String,  default: '' },
 })
-defineEmits(['close'])
+defineEmits(['minimize', 'close'])
 
 const messages  = ref([])
 const inputText = ref('')
@@ -56,14 +59,8 @@ const sessionId = ref(null)
 const msgBox    = ref(null)
 const inputEl   = ref(null)
 
-watch(() => props.visible, async (val) => {
-  if (!val) return
-  messages.value  = []
-  inputText.value = ''
-  sessionId.value = null
-  busy.value      = false
-  subtitle.value  = `${props.vehicleId} · ініціалізація...`
-
+onMounted(async () => {
+  subtitle.value = `${props.vehicleId} · ініціалізація...`
   pushMsg('ai', '⏳ Аналізую телеметрію та базу знань...', true)
 
   try {
@@ -78,12 +75,14 @@ watch(() => props.visible, async (val) => {
     removeTyping()
     pushMsg('ai', res.initial_message)
     subtitle.value = `${props.vehicleId} · ${props.dtcCode}`
-    await nextTick()
-    inputEl.value?.focus()
   } catch (e) {
     removeTyping()
     pushMsg('ai', `⚠️ Помилка ініціалізації: ${e.message}`)
   }
+})
+
+watch(() => props.expanded, (val) => {
+  if (val) nextTick(() => inputEl.value?.focus())
 })
 
 async function send() {
@@ -138,11 +137,10 @@ function formatText(text) {
 
 <style scoped>
 .chat-overlay {
-  display: none; position: fixed; inset: 0;
+  position: fixed; inset: 0;
   background: rgba(0,0,0,.55); z-index: 1000;
-  align-items: center; justify-content: center;
+  display: flex; align-items: center; justify-content: center;
 }
-.chat-overlay.open { display: flex; }
 
 .chat-panel {
   width: 480px; max-width: 96vw; height: 620px; max-height: 90vh;
@@ -152,17 +150,25 @@ function formatText(text) {
   animation: chatSlideIn .22s ease;
 }
 
+@keyframes chatSlideIn {
+  from { opacity: 0; transform: translateY(20px) scale(.97); }
+  to   { opacity: 1; transform: none; }
+}
+
 .chat-header {
   display: flex; align-items: center; justify-content: space-between;
   padding: 12px 16px; border-bottom: 1px solid var(--border); flex-shrink: 0;
 }
 .chat-title    { font-family: var(--mono); font-size: .8rem; color: var(--accent); }
 .chat-subtitle { font-size: .62rem; color: var(--muted); margin-top: 2px; }
-.chat-close {
+
+.header-btns { display: flex; gap: 6px; }
+.chat-btn {
   cursor: pointer; color: var(--muted); font-size: 1rem;
   padding: 4px 8px; border-radius: 4px; background: none; border: none; transition: .15s;
 }
-.chat-close:hover { color: var(--red); background: rgba(255,61,61,.1); }
+.chat-btn:hover       { color: var(--accent); background: rgba(0,229,255,.1); }
+.chat-btn.close:hover { color: var(--red);    background: rgba(255,61,61,.1); }
 
 .chat-messages {
   flex: 1; overflow-y: auto; padding: 14px 14px 8px;

@@ -45,27 +45,50 @@
 
     <!-- RIGHT SIDEBAR -->
     <aside class="sidebar sidebar-right">
-      <div class="s-section" style="flex:0 0 auto;">
-        <div class="s-title">❤ Здоров'я автопарку</div>
-        <FleetHealth :health="fleetHealth" />
+      <div class="s-section" :class="{ collapsed: rCollapsed.health }" style="flex:0 0 auto;">
+        <div class="s-title">
+          ❤ Здоров'я автопарку
+          <button class="collapse-btn" @click="rCollapsed.health = !rCollapsed.health">{{ rCollapsed.health ? '▸' : '▾' }}</button>
+        </div>
+        <FleetHealth v-show="!rCollapsed.health" :health="fleetHealth" />
       </div>
-      <div class="s-section" style="flex:0 0 auto;max-height:26%;display:flex;flex-direction:column;">
-        <div class="s-title">🔮 Прогноз заряду — через 1 годину</div>
-        <PredictionList :predictions="predictions" />
+      <div class="s-section" :class="{ collapsed: rCollapsed.pred }" style="flex:0 0 auto;max-height:26%;display:flex;flex-direction:column;">
+        <div class="s-title">
+          🔮 Прогноз заряду — через 1 годину
+          <button class="collapse-btn" @click="rCollapsed.pred = !rCollapsed.pred">{{ rCollapsed.pred ? '▸' : '▾' }}</button>
+        </div>
+        <PredictionList v-show="!rCollapsed.pred" :predictions="predictions" />
       </div>
-      <div class="s-section grow">
-        <div class="s-title">📋 Рекомендації</div>
-        <RecommendationList :recommendations="recommendations" />
+      <div class="s-section grow" :class="{ collapsed: rCollapsed.recs }">
+        <div class="s-title">
+          📋 Рекомендації
+          <button class="collapse-btn" @click="rCollapsed.recs = !rCollapsed.recs">{{ rCollapsed.recs ? '▸' : '▾' }}</button>
+        </div>
+        <RecommendationList v-show="!rCollapsed.recs" :recommendations="recommendations" />
       </div>
     </aside>
   </div>
 
   <ChatOverlay
-    :visible="chatVisible"
-    :vehicle-id="chatVehicleId"
-    :dtc-code="chatDtcCode"
-    @close="chatVisible = false"
+    v-for="w in chatWindows"
+    :key="w.id"
+    :vehicle-id="w.vehicleId"
+    :dtc-code="w.dtcCode"
+    :expanded="activeChatId === w.id"
+    @minimize="activeChatId = null"
+    @close="closeChat(w.id)"
   />
+
+  <div v-if="minimizedChats.length" class="chat-dock">
+    <button
+      v-for="w in minimizedChats"
+      :key="w.id"
+      class="chat-tab"
+      @click="activeChatId = w.id"
+    >
+      🤖 {{ w.vehicleId }} · {{ w.dtcCode }}
+    </button>
+  </div>
 
   <VehicleDetailModal
     :visible="detailVisible"
@@ -97,15 +120,16 @@ const fleetHealth     = ref({ fleet_score: 0, vehicles: [] })
 const chartHistory    = ref([])
 const selectedVehicle = ref(null)
 
-const chatVisible   = ref(false)
-const chatVehicleId = ref('')
-const chatDtcCode   = ref('')
+const chatWindows  = ref([])
+const activeChatId = ref(null)
+const rCollapsed   = ref({ health: false, pred: false, recs: false })
 
 const detailVisible   = ref(false)
 const detailVehicleId = ref(null)
 
-const activeCount = computed(() => fleet.value.filter(v => v.timestamp !== null).length)
-const errorCount  = computed(() => alerts.value.filter(a => a.is_active).length)
+const activeCount   = computed(() => fleet.value.filter(v => v.timestamp !== null).length)
+const errorCount    = computed(() => alerts.value.filter(a => a.is_active).length)
+const minimizedChats = computed(() => chatWindows.value.filter(w => w.id !== activeChatId.value))
 
 async function refresh() {
   try {
@@ -141,9 +165,20 @@ function selectVehicle(vid) {
 }
 
 function openChat(vehicleId, dtcCode) {
-  chatVehicleId.value = vehicleId
-  chatDtcCode.value   = dtcCode
-  chatVisible.value   = true
+  const existing = chatWindows.value.find(w => w.vehicleId === vehicleId && w.dtcCode === dtcCode)
+  if (existing) {
+    activeChatId.value = existing.id
+    return
+  }
+  const id = `${vehicleId}_${dtcCode}_${Date.now()}`
+  chatWindows.value.push({ id, vehicleId, dtcCode })
+  activeChatId.value = id
+}
+
+function closeChat(id) {
+  chatWindows.value = chatWindows.value.filter(w => w.id !== id)
+  if (activeChatId.value === id)
+    activeChatId.value = chatWindows.value.length ? chatWindows.value[chatWindows.value.length - 1].id : null
 }
 
 function openReport(vid) {
@@ -186,4 +221,27 @@ onUnmounted(() => clearInterval(timer))
 }
 .stat-val { font-family: var(--mono); font-size: 1.3rem; color: var(--accent); line-height: 1; }
 .stat-lbl { font-size: .58rem; color: var(--muted); margin-top: 3px; }
+
+.collapse-btn {
+  margin-left: auto; background: none; border: none;
+  color: var(--muted); font-size: .7rem; cursor: pointer;
+  padding: 0 2px; line-height: 1; transition: color .15s;
+}
+.collapse-btn:hover { color: var(--accent); }
+.s-section.collapsed { flex: 0 0 auto !important; max-height: none !important; }
+
+.chat-dock {
+  position: fixed; bottom: 0; left: 50%; transform: translateX(-50%);
+  display: flex; gap: 6px; padding: 6px 10px;
+  background: var(--panel); border: 1px solid var(--border);
+  border-bottom: none; border-radius: 8px 8px 0 0;
+  z-index: 999;
+}
+.chat-tab {
+  font-family: var(--mono); font-size: .65rem;
+  padding: 5px 14px; border-radius: 6px; cursor: pointer;
+  background: rgba(0,229,255,.06); border: 1px solid var(--accent);
+  color: var(--accent); transition: .15s;
+}
+.chat-tab:hover { background: rgba(0,229,255,.15); }
 </style>

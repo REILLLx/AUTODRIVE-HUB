@@ -17,6 +17,8 @@ __pycache__/
 .venv/
 venv/
 
+agent_evaluation_20260522_1821.json
+
 # Node / Vue
 node_modules/
 frontend/node_modules/

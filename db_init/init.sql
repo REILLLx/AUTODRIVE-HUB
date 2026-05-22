@@ -33,15 +33,6 @@ CREATE TABLE IF NOT EXISTS lstm_predictions (
     predicted_soc FLOAT
 );
 
-CREATE TABLE IF NOT EXISTS ai_verdicts (
-    id          SERIAL PRIMARY KEY,
-    vehicle_id  INTEGER REFERENCES vehicles(id) ON DELETE CASCADE,
-    dtc_code    VARCHAR(50),
-    score       FLOAT,
-    verdict     TEXT,
-    created_at  TIMESTAMP DEFAULT NOW()
-);
-
 CREATE TABLE IF NOT EXISTS geofence_events (
     id          SERIAL PRIMARY KEY,
     vehicle_id  INTEGER REFERENCES vehicles(id) ON DELETE CASCADE,

@@ -185,23 +185,6 @@ def api_predictions():
     return jsonify(rows)
 
 
-@app.route("/api/verdicts")
-def api_verdicts():
-    rows = query("""
-        SELECT DISTINCT ON (v.vehicle_code)
-            a.id, v.vehicle_code AS vehicle_id, v.brand, v.model,
-            a.timestamp, a.dtc_code, a.verdict, a.score
-        FROM ai_verdicts a
-        JOIN vehicles v ON v.id = a.vehicle_id
-        ORDER BY v.vehicle_code, a.timestamp DESC LIMIT 10
-    """)
-    return jsonify(rows)
-
-@app.route("/api/verdicts/<int:verdict_id>", methods=["DELETE"])
-def delete_verdict(verdict_id):
-    execute("DELETE FROM ai_verdicts WHERE id = %s", (verdict_id,))
-    return jsonify({"status": "deleted", "id": verdict_id})
-
 
 @app.route("/api/geofence/events")
 def api_geofence_events():
@@ -894,7 +877,6 @@ def db_clear():
     tables = [
         'vehicle_telemetry',
         'lstm_predictions',
-        'ai_verdicts',
         'geofence_events',
         'depot_recommendations',
     ]
