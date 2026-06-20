@@ -91,7 +91,9 @@ def api_fleet():
             t.timestamp, t.lat, t.lon, t.speed_kph,
             t.soc_pct, t.soh_pct, t.battery_temp_c,
             t.brake_pad_wear_mm, t.abs_fault_indicator, t.active_error_code,
-            t.battery_current_a, t.acceleration_ms2, t.ambient_temp_c, t.power_kw
+            t.battery_current_a, t.acceleration_ms2, t.ambient_temp_c, t.power_kw,
+            t.ad_mode, t.camera_blinded,
+            t.sensor_array_status, t.sensor_fault_code
         FROM vehicles v
         LEFT JOIN vehicle_telemetry t
             ON t.vehicle_id = v.id
@@ -106,10 +108,11 @@ def api_alerts():
     max_ts = get_db_max_ts()
     if not max_ts:
         return jsonify([])
-    rows = query("""
+
+    dtc_rows = query("""
         SELECT DISTINCT ON (v.vehicle_code)
             v.vehicle_code AS vehicle_id, v.brand, v.model,
-            t.timestamp, t.active_error_code,
+            t.timestamp, t.active_error_code AS error_code,
             (
                 latest.active_error_code IS NOT NULL
                 AND latest.active_error_code NOT IN ('None', '')
@@ -118,10 +121,8 @@ def api_alerts():
         FROM vehicle_telemetry t
         JOIN vehicles v ON v.id = t.vehicle_id
         JOIN LATERAL (
-            SELECT active_error_code
-            FROM vehicle_telemetry
-            WHERE vehicle_id = t.vehicle_id
-            ORDER BY timestamp DESC LIMIT 1
+            SELECT active_error_code FROM vehicle_telemetry
+            WHERE vehicle_id = t.vehicle_id ORDER BY timestamp DESC LIMIT 1
         ) latest ON true
         WHERE t.active_error_code IS NOT NULL
           AND t.active_error_code NOT IN ('None', '')
@@ -129,7 +130,39 @@ def api_alerts():
         ORDER BY v.vehicle_code, t.timestamp DESC
         LIMIT 20
     """ % ('%s', DATA_WINDOW_HOURS), (max_ts,))
-    return jsonify(rows)
+    for r in dtc_rows:
+        r['type'] = 'dtc'
+
+    sensor_rows = query("""
+        SELECT DISTINCT ON (v.vehicle_code)
+            v.vehicle_code AS vehicle_id, v.brand, v.model,
+            t.timestamp, t.sensor_fault_code AS error_code,
+            (t.timestamp > %s - INTERVAL '3 minutes') AS is_active
+        FROM vehicle_telemetry t
+        JOIN vehicles v ON v.id = t.vehicle_id
+        WHERE t.sensor_fault_code IS NOT NULL
+          AND t.timestamp > %s - INTERVAL '%s hours'
+        ORDER BY v.vehicle_code, t.timestamp DESC
+        LIMIT 20
+    """ % ('%s', '%s', DATA_WINDOW_HOURS), (max_ts, max_ts))
+    for r in sensor_rows:
+        r['type'] = 'sensor'
+
+    # Дедуплікація: лишаємо один запис на (vehicle_id, type, error_code)
+    seen: set = set()
+    deduped = []
+    for item in dtc_rows + sensor_rows:
+        key = (item['vehicle_id'], item.get('type', ''), str(item.get('error_code') or ''))
+        if key not in seen:
+            seen.add(key)
+            deduped.append(item)
+
+    deduped.sort(key=lambda x: (
+        0 if x['is_active'] else 1,   # активні — вгорі
+        0 if x.get('type') == 'dtc' else 1,  # DTC перед SENSOR
+        str(x.get('vehicle_id') or ''),      # потім за авто
+    ))
+    return jsonify(deduped[:30])
 
 
 @app.route("/api/soc/<vehicle_id>")
@@ -151,6 +184,9 @@ def api_soc(vehicle_id):
 
 @app.route("/api/chart/<vehicle_id>")
 def api_chart(vehicle_id):
+    exists = query("SELECT id FROM vehicles WHERE vehicle_code = %s", (vehicle_id,))
+    if not exists:
+        return jsonify({"error": "Vehicle not found", "vehicle_id": vehicle_id}), 404
     max_ts = get_db_max_ts()
     if not max_ts:
         return jsonify([])
@@ -172,16 +208,16 @@ def api_predictions():
     if not max_ts:
         return jsonify([])
     rows = query("""
-        SELECT DISTINCT ON (v.vehicle_code)
-            v.vehicle_code  AS vehicle_id,
-            p.timestamp,
-            p.current_soc,
-            p.predicted_soc
+        SELECT
+            v.vehicle_code AS vehicle_id,
+            MAX(p.predicted_at)       AS predicted_at,
+            AVG(p.current_soc)        AS current_soc,
+            AVG(p.predicted_soc)      AS predicted_soc
         FROM lstm_predictions p
         JOIN vehicles v ON v.id = p.vehicle_id
-        WHERE p.timestamp > %s - INTERVAL '%s hours'
-        ORDER BY v.vehicle_code, p.timestamp DESC
-    """ % ('%s', DATA_WINDOW_HOURS), (max_ts,))
+        WHERE p.predicted_at > %s - INTERVAL '5 minutes'
+        GROUP BY v.vehicle_code
+    """, (max_ts,))
     return jsonify(rows)
 
 
@@ -189,12 +225,18 @@ def api_predictions():
 @app.route("/api/geofence/events")
 def api_geofence_events():
     rows = query("""
-        SELECT DISTINCT ON (v.vehicle_code)
-            g.id, v.vehicle_code, v.brand, v.model,
+        SELECT
+            v.vehicle_code, v.brand, v.model,
             g.event_type, g.timestamp, g.lat, g.lon, g.distance_m
-        FROM geofence_events g
-        JOIN vehicles v ON v.id = g.vehicle_id
-        ORDER BY v.vehicle_code, g.timestamp DESC
+        FROM vehicles v
+        LEFT JOIN LATERAL (
+            SELECT event_type, timestamp, lat, lon, distance_m
+            FROM geofence_events
+            WHERE vehicle_id = v.id
+            ORDER BY timestamp DESC
+            LIMIT 1
+        ) g ON true
+        ORDER BY v.vehicle_code
     """)
     return jsonify(rows)
 
@@ -221,18 +263,26 @@ def api_route(vehicle_id):
 @app.route("/api/geofence/status")
 def api_geofence_status():
     rows = query("""
-        SELECT DISTINCT ON (v.vehicle_code)
-            v.vehicle_code,
-            v.brand,
-            v.model,
-            t.lat,
-            t.lon,
-            t.timestamp,
+        SELECT
+            v.vehicle_code, v.brand, v.model,
+            t.lat, t.lon, t.timestamp,
             g.event_type
         FROM vehicles v
-        LEFT JOIN vehicle_telemetry t ON t.vehicle_id = v.id
-        LEFT JOIN geofence_events g ON g.vehicle_id = v.id
-        ORDER BY v.vehicle_code, t.timestamp DESC, g.timestamp DESC
+        LEFT JOIN LATERAL (
+            SELECT lat, lon, timestamp
+            FROM vehicle_telemetry
+            WHERE vehicle_id = v.id
+            ORDER BY timestamp DESC
+            LIMIT 1
+        ) t ON true
+        LEFT JOIN LATERAL (
+            SELECT event_type
+            FROM geofence_events
+            WHERE vehicle_id = v.id
+            ORDER BY timestamp DESC
+            LIMIT 1
+        ) g ON true
+        ORDER BY v.vehicle_code
     """)
 
     DEPOT_LAT = 50.4501
@@ -263,33 +313,45 @@ def api_geofence_status():
 def api_recommendations():
     rows = query("""
         SELECT r.id, v.vehicle_code, v.brand, v.model,
-               r.timestamp, r.current_soc, r.predicted_soc,
+               r.created_at, r.current_soc, r.predicted_soc,
                r.distance_to_depot_m, r.reason, r.status
         FROM depot_recommendations r
         JOIN vehicles v ON v.id = r.vehicle_id
         WHERE r.status = 'active'
-        ORDER BY r.timestamp DESC
+        ORDER BY r.created_at DESC
     """)
     return jsonify(rows)
+
 
 @app.route("/api/recommendations/combined")
 def api_recommendations_combined():
     vehicle_signals = {}
 
+    max_ts = get_db_max_ts()
     preds = query("""
-        SELECT DISTINCT ON (v.vehicle_code)
-            v.vehicle_code AS vehicle_id,
-            p.current_soc, p.predicted_soc, p.timestamp
+        SELECT
+            v.vehicle_code          AS vehicle_id,
+            MAX(p.predicted_at)     AS predicted_at,
+            AVG(p.current_soc)      AS current_soc,
+            AVG(p.predicted_soc)    AS predicted_soc
         FROM lstm_predictions p
         JOIN vehicles v ON v.id = p.vehicle_id
-        ORDER BY v.vehicle_code, p.timestamp DESC
-    """)
+        WHERE p.predicted_at > %s - INTERVAL '5 minutes'
+        GROUP BY v.vehicle_code
+    """, (max_ts,)) if max_ts else []
+    # Зберігаємо поточні значення SOC окремо — щоб перезаписувати старі
+    current_soc_map = {}
     for p in preds:
         vid  = p["vehicle_id"]
         cur  = float(p.get("current_soc", 100))
         pred = float(p.get("predicted_soc", 100))
+        current_soc_map[vid] = {"cur": cur, "pred": pred}
         if vid not in vehicle_signals:
-            vehicle_signals[vid] = {"signals": [], "cur": cur, "pred": pred, "dist": 0, "reason": "", "dtc_code": "", "timestamp": str(p["timestamp"])}
+            vehicle_signals[vid] = {"signals": [], "cur": cur, "pred": pred, "dist": 0, "reason": "", "dtc_code": "", "timestamp": p["predicted_at"].isoformat() if p["predicted_at"] else ""}
+        else:
+            # Завжди оновлюємо актуальними значеннями
+            vehicle_signals[vid]["cur"]  = cur
+            vehicle_signals[vid]["pred"] = pred
         if cur < 15:
             vehicle_signals[vid]["signals"].append("critical_soc")
         elif pred < 15:
@@ -300,38 +362,31 @@ def api_recommendations_combined():
     depot_recs = query("""
         SELECT DISTINCT ON (v.vehicle_code)
             v.vehicle_code AS vehicle_id,
-            r.current_soc, r.predicted_soc,
-            r.distance_to_depot_m, r.reason, r.timestamp
+            r.id, r.current_soc, r.predicted_soc,
+            r.distance_to_depot_m, r.reason, r.created_at
         FROM depot_recommendations r
         JOIN vehicles v ON v.id = r.vehicle_id
         WHERE r.status = 'active'
-        ORDER BY v.vehicle_code, r.timestamp DESC
+        ORDER BY v.vehicle_code, r.created_at DESC
     """)
     for r in depot_recs:
-        vid = r["vehicle_id"]
-        cur  = float(r.get("current_soc", 100))
-        pred = float(r.get("predicted_soc", 100))
+        vid    = r["vehicle_id"]
+        reason = str(r.get("reason", ""))
+        cur    = float(r.get("current_soc", 100))
+        pred   = float(r.get("predicted_soc", 100))
+        ts     = r["created_at"].isoformat() if r.get("created_at") else ""
+        rec_id = r.get("id")
         if vid not in vehicle_signals:
-            vehicle_signals[vid] = {"signals": [], "cur": cur, "pred": pred, "dist": 0, "reason": "", "dtc_code": "", "timestamp": str(r["timestamp"])}
-        vehicle_signals[vid]["dist"]   = int(r.get("distance_to_depot_m") or 0)
-        vehicle_signals[vid]["reason"] = str(r.get("reason", ""))
-        vehicle_signals[vid]["signals"].append("depot_return")
+            vehicle_signals[vid] = {"signals": [], "cur": cur, "pred": pred, "dist": 0, "reason": reason, "dtc_code": "", "timestamp": ts, "rec_id": rec_id}
+        else:
+            # Якщо є актуальні дані з LSTM — використовуємо їх, а не старі зі збереженої рекомендації
+            if vid in current_soc_map:
+                vehicle_signals[vid]["cur"]  = current_soc_map[vid]["cur"]
+                vehicle_signals[vid]["pred"] = current_soc_map[vid]["pred"]
 
-    verdicts = query("""
-        SELECT DISTINCT ON (v.vehicle_code)
-            v.vehicle_code AS vehicle_id,
-            a.dtc_code, a.verdict, a.timestamp
-        FROM ai_verdicts a
-        JOIN vehicles v ON v.id = a.vehicle_id
-        ORDER BY v.vehicle_code, a.timestamp DESC LIMIT 10
-    """)
-    for v in verdicts:
-        vid = v["vehicle_id"]
-        is_real = any(w in str(v.get("verdict","")).lower() for w in ["реальна","підтверджена","несправність","відкликати","fault"])
-        if vid not in vehicle_signals:
-            vehicle_signals[vid] = {"signals": [], "cur": None, "pred": None, "dist": 0, "reason": "", "dtc_code": v["dtc_code"], "timestamp": str(v["timestamp"])}
-        vehicle_signals[vid]["dtc_code"] = v["dtc_code"]
-        vehicle_signals[vid]["signals"].append("dtc_fault" if is_real else "dtc_glitch")
+        vehicle_signals[vid]["dist"]   = int(r.get("distance_to_depot_m") or 0)
+        vehicle_signals[vid]["reason"] = reason
+        vehicle_signals[vid]["signals"].append("depot_return")
 
     level_order = {"critical": 0, "warning": 1, "info": 2}
     recs = []
@@ -349,10 +404,6 @@ def api_recommendations_combined():
             level   = "critical"
             message = f"Прогноз заряду: заряд впаде до {pred:.1f}% — негайно направити на зарядку!"
             detail  = f"Поточний SOC: {cur:.1f}% · До депо: {dist} м"
-        elif "dtc_fault" in types:
-            level   = "critical"
-            message = f"Несправність {dtc} — відкликати авто для діагностики."
-            detail  = "Детальний аналіз у блоці «Вердикти AI-агента»"
         elif "depot_return" in types and "low_soc_forecast" in types:
             level   = "warning"
             message = "Швидкий розряд акумулятора — враховуйте при виборі маршруту."
@@ -369,21 +420,18 @@ def api_recommendations_combined():
             level   = "warning"
             message = f"Прогноз заряду: {pred:.1f}% — знайдіть зарядну станцію або поверніться в депо."
             detail  = f"Поточний SOC: {cur:.1f}%"
-        elif "dtc_glitch" in types:
-            level   = "info"
-            message = f"Датчик {dtc} — можливий збій, продовжити моніторинг."
-            detail  = "Детальний аналіз у блоці «Вердикти AI-агента»"
         else:
             continue
 
-        recs.append({"vehicle_id": vid, "level": level, "message": message, "detail": detail, "timestamp": ts})
+        recs.append({"vehicle_id": vid, "level": level, "message": message, "detail": detail,
+                     "timestamp": ts, "rec_id": d.get("rec_id")})
 
     telem = query("""
         SELECT DISTINCT ON (v.vehicle_code)
             v.vehicle_code AS vehicle_id,
             t.battery_temp_c, t.soh_pct,
             t.brake_pad_wear_mm, t.abs_fault_indicator,
-            t.timestamp
+            t.ad_mode, t.timestamp
         FROM vehicles v
         LEFT JOIN vehicle_telemetry t ON t.vehicle_id = v.id
         ORDER BY v.vehicle_code, t.timestamp DESC
@@ -395,8 +443,15 @@ def api_recommendations_combined():
         soh   = float(t.get("soh_pct")           or 100)
         brake = float(t.get("brake_pad_wear_mm") or 8)
         abs_f = int(t.get("abs_fault_indicator") or 0)
-        ts    = str(t.get("timestamp", ""))
-        dtc   = vehicle_signals.get(vid, {}).get("dtc_code", "")
+        ts      = str(t.get("timestamp", ""))
+        dtc     = vehicle_signals.get(vid, {}).get("dtc_code", "")
+        ad_mode = t.get("ad_mode") or "AUTONOMOUS"
+
+        if ad_mode == "MANUAL_OVERRIDE":
+            recs.append({"vehicle_id": vid, "level": "warning",
+                "message": "Авто під дистанційним керуванням оператора",
+                "detail": "Контролюйте телеметрію та відеопотік · Направте до депо при можливості",
+                "timestamp": ts})
 
         if "P1B74" not in dtc:
             if temp > 65:
@@ -474,8 +529,10 @@ def generate_report(vehicle_id):
     fleet = query("""
         SELECT DISTINCT ON (v.vehicle_code)
             v.vehicle_code, v.brand, v.model,
-            t.timestamp, t.soc_pct, t.battery_temp_c,
-            t.speed_kph, t.brake_pad_wear_mm, t.active_error_code
+            t.timestamp, t.soc_pct, t.soh_pct, t.battery_temp_c,
+            t.speed_kph, t.brake_pad_wear_mm, t.abs_fault_indicator,
+            t.active_error_code, t.sensor_array_status,
+            t.camera_blinded, t.sensor_fault_code, t.ad_mode
         FROM vehicles v
         LEFT JOIN vehicle_telemetry t ON t.vehicle_id = v.id
         WHERE v.vehicle_code = %s
@@ -483,11 +540,11 @@ def generate_report(vehicle_id):
     """, (vehicle_id,))
 
     pred = query("""
-        SELECT p.current_soc, p.predicted_soc, p.timestamp
+        SELECT p.current_soc, p.predicted_soc, p.predicted_at
         FROM lstm_predictions p
         JOIN vehicles v ON v.id = p.vehicle_id
         WHERE v.vehicle_code = %s
-        ORDER BY p.timestamp DESC LIMIT 1
+        ORDER BY p.predicted_at DESC LIMIT 1
     """, (vehicle_id,))
 
     geo = query("""
@@ -500,11 +557,11 @@ def generate_report(vehicle_id):
 
     rec = query("""
         SELECT r.reason, r.current_soc, r.predicted_soc,
-               r.distance_to_depot_m, r.timestamp
+               r.distance_to_depot_m, r.created_at
         FROM depot_recommendations r
         JOIN vehicles v ON v.id = r.vehicle_id
         WHERE v.vehicle_code = %s
-        ORDER BY r.timestamp DESC LIMIT 3
+        ORDER BY r.created_at DESC LIMIT 3
     """, (vehicle_id,))
 
     telemetry_series = query("""
@@ -515,6 +572,37 @@ def generate_report(vehicle_id):
           AND t.timestamp > %s - INTERVAL '24 hours'
         ORDER BY t.timestamp ASC
     """, (vehicle_id, max_ts))
+
+    # Формуємо повний список рекомендацій для звіту
+    report_recs = []
+    for r in rec:
+        ts = str(r.get('created_at', ''))[:16]
+        report_recs.append(('warn', f"{ts}: {r.get('reason', '')}"))
+    if fleet:
+        fv     = fleet[0]
+        temp   = float(fv.get('battery_temp_c') or 0)
+        soh    = float(fv.get('soh_pct')        or 100)
+        brake  = float(fv.get('brake_pad_wear_mm') or 8)
+        abs_f  = int(fv.get('abs_fault_indicator') or 0)
+        sfault = fv.get('sensor_fault_code')
+        if temp > 65:
+            report_recs.append(('crit', f"Критичний перегрів батареї: {temp:.1f}°C — максимум 65°C, зупинити авто"))
+        elif temp > 50:
+            report_recs.append(('warn', f"Підвищена температура батареї: {temp:.1f}°C (норма до 50°C)"))
+        if soh < 80:
+            report_recs.append(('crit', f"Критична деградація батареї: SOH {soh:.1f}% — необхідна заміна (поріг 80%)"))
+        elif soh < 85:
+            report_recs.append(('warn', f"Знижений ресурс батареї: SOH {soh:.1f}% — планова діагностика"))
+        if brake < 2.5:
+            report_recs.append(('crit', f"Критичний знос гальм: {brake:.1f} мм — негайна заміна колодок"))
+        elif brake < 4.0:
+            report_recs.append(('warn', f"Знос гальмівних колодок: {brake:.1f} мм (критичний поріг 2.5 мм)"))
+        if abs_f == 1:
+            report_recs.append(('warn', "Спрацювання датчика ABS — перевірити гальмівну систему"))
+        if sfault == 'SENSOR_ARR_DEGRADED':
+            report_recs.append(('warn', "Деградація масиву сенсорів (LiDAR/Radar) — перевірка апаратури"))
+        elif sfault == 'SENSOR_CAM_BLIND':
+            report_recs.append(('warn', "Засліплення фронтальної камери — очищення або заміна"))
 
     chart_img = None
     if len(telemetry_series) >= 2:
@@ -601,12 +689,18 @@ def generate_report(vehicle_id):
         v = fleet[0]
         text(40, y, "Загальна інформація", FONT_BOLD, 13)
         y -= 22
-        err     = v.get('active_error_code', 'None')
-        err_str = err if err and err not in ('None', '') else 'Відсутня'
+        err      = v.get('active_error_code', 'None')
+        err_str  = err if err and err not in ('None', '') else 'Відсутня'
+        soh_val  = float(v.get('soh_pct') or 100)
+        arr      = v.get('sensor_array_status') or 'OK'
+        arr_str  = {'OK': 'Норма', 'DEGRADED': 'Деградація ⚠', 'ERROR': 'Відмова ✕'}.get(arr, arr)
+        mode     = v.get('ad_mode') or 'AUTONOMOUS'
+        mode_str = {'AUTONOMOUS': 'Автономний', 'MANUAL_OVERRIDE': 'Дистанційне керування', 'SAFE_STOP': 'Безпечна зупинка'}.get(mode, mode)
         text(40, y, f"Марка/Модель: {v.get('brand','')} {v.get('model','')}", size=11); y -= 17
-        text(40, y, f"SOC: {v.get('soc_pct','—')}%", size=11); y -= 17
-        text(40, y, f"Температура батареї: {round(v.get('battery_temp_c',0),1)}°C", size=11); y -= 17
-        text(40, y, f"Знос гальм: {v.get('brake_pad_wear_mm','—')} мм", size=11); y -= 17
+        text(40, y, f"SOC: {round(float(v.get('soc_pct') or 0), 1)}%  |  SOH: {soh_val:.1f}%", size=11); y -= 17
+        text(40, y, f"Температура батареї: {round(float(v.get('battery_temp_c') or 0), 1)}°C", size=11); y -= 17
+        text(40, y, f"Знос гальм: {round(float(v.get('brake_pad_wear_mm') or 0), 2)} мм", size=11); y -= 17
+        text(40, y, f"Режим керування: {mode_str}  |  Сенсори: {arr_str}", size=11); y -= 17
         text(40, y, f"Активна помилка: {err_str}", size=11); y -= 25
         draw_line(y); y -= 18
 
@@ -620,7 +714,7 @@ def generate_report(vehicle_id):
         text(40, y, f"Час у русі:             ~{moving_min} хв", size=11); y -= 17
         text(40, y, f"Час стоянки:            ~{standing_min} хв", size=11); y -= 17
         text(40, y, f"Середня темп. батареї:  {s.get('avg_temp','—')}°C", size=11); y -= 17
-        text(40, y, f"Макс. темп. батареї:    {s.get('max_temp','—')}°C", size=11); y -= 17
+        text(40, y, f"Макс. темп. батареї:    {round(float(s.get('max_temp') or 0), 1)}°C", size=11); y -= 17
         text(40, y, f"SOC: макс {s.get('max_soc','—')}%  /  мін {s.get('min_soc','—')}%  /  сер {s.get('avg_soc','—')}%", size=11)
     else:
         text(40, y, "Даних за 24 години немає", size=11, r=0.5, g=0.5, b=0.5)
@@ -635,7 +729,7 @@ def generate_report(vehicle_id):
         delta   = round(prd_soc - cur_soc, 1)
         sign    = '+' if delta >= 0 else ''
         text(40, y, f"Поточний SOC: {cur_soc:.1f}%", size=11); y -= 17
-        text(40, y, f"Прогноз через 40 кроків (~20 хв): {prd_soc:.1f}%  ({sign}{delta}%)", size=11)
+        text(40, y, f"Прогноз заряду через 1 годину: {prd_soc:.1f}%  ({sign}{delta}%)", size=11)
     else:
         text(40, y, "Даних немає", size=11, r=0.5, g=0.5, b=0.5)
     y -= 25
@@ -654,18 +748,20 @@ def generate_report(vehicle_id):
     draw_line(y); y -= 18
 
     text(40, y, "Рекомендації ІСППР", FONT_BOLD, 13); y -= 22
-    if rec:
-        for r in rec:
-            ts        = str(r.get('timestamp', ''))[:16]
-            reason    = str(r.get('reason', ''))
-            full_line = f"{ts}: {reason}"
-            if len(full_line) <= 85:
-                text(40, y, full_line, size=10); y -= 15
+    if report_recs:
+        for level, line in report_recs:
+            prefix = "[!]" if level == 'crit' else "[~]"
+            full = f"{prefix} {line}"
+            cr, cg, cb = (0.85, 0.1, 0.1) if level == 'crit' else (0.6, 0.4, 0.0)
+            if len(full) <= 85:
+                text(40, y, full, size=10, r=cr, g=cg, b=cb); y -= 15
             else:
-                text(40, y, full_line[:85], size=10); y -= 13
-                text(40, y, full_line[85:170], size=10); y -= 15
+                text(40, y, full[:85], size=10, r=cr, g=cg, b=cb); y -= 13
+                text(40, y, full[85:170], size=10, r=cr, g=cg, b=cb); y -= 15
+            if y < 60:
+                break
     else:
-        text(40, y, "Рекомендацій не було", size=11, r=0.3, g=0.6, b=0.3)
+        text(40, y, "Відхилень не виявлено — система в нормі", size=11, r=0.15, g=0.55, b=0.15)
 
     if chart_img:
         c.showPage()
@@ -699,7 +795,8 @@ def api_fleet_health():
         SELECT DISTINCT ON (v.vehicle_code)
             v.vehicle_code AS vehicle_id,
             t.soc_pct, t.soh_pct, t.battery_temp_c,
-            t.brake_pad_wear_mm, t.active_error_code
+            t.brake_pad_wear_mm, t.active_error_code,
+            t.sensor_array_status, t.camera_blinded
         FROM vehicles v
         LEFT JOIN vehicle_telemetry t ON t.vehicle_id = v.id
             AND t.timestamp > %s - INTERVAL '1 hour'
@@ -708,11 +805,13 @@ def api_fleet_health():
 
     vehicles = []
     for row in rows:
-        soc   = float(row['soc_pct']          or 50)
-        soh   = float(row['soh_pct']          or 100)
-        temp  = float(row['battery_temp_c']   or 25)
-        brake = float(row['brake_pad_wear_mm'] or 8)
-        error = row['active_error_code']
+        soc            = float(row['soc_pct']          or 50)
+        soh            = float(row['soh_pct']          or 100)
+        temp           = float(row['battery_temp_c']   or 25)
+        brake          = float(row['brake_pad_wear_mm'] or 8)
+        error          = row['active_error_code']
+        arr_status     = row['sensor_array_status'] or 'OK'
+        camera_blinded = row['camera_blinded'] if row['camera_blinded'] is not None else False
 
         soc_score   = min(soc / 50.0, 1.0) * 100
         soh_score   = soh
@@ -730,12 +829,20 @@ def api_fleet_health():
             brake_score = (brake - 2.5) / (6 - 2.5) * 100
         error_score = 0 if (error and error not in ('None', '')) else 100
 
+        if arr_status == 'ERROR':
+            sensor_score = 0
+        elif arr_status == 'DEGRADED' or camera_blinded:
+            sensor_score = 50
+        else:
+            sensor_score = 100
+
         health = (
-            0.30 * soc_score +
-            0.25 * soh_score +
-            0.20 * temp_score +
+            0.25 * soc_score +
+            0.20 * soh_score +
+            0.15 * temp_score +
             0.15 * brake_score +
-            0.10 * error_score
+            0.10 * error_score +
+            0.15 * sensor_score
         )
         health = round(health, 1)
 
@@ -751,11 +858,12 @@ def api_fleet_health():
             'health': health,
             'status': status,
             'components': {
-                'soc':   round(soc_score, 1),
-                'soh':   round(soh_score, 1),
-                'temp':  round(temp_score, 1),
-                'brake': round(brake_score, 1),
-                'error': round(error_score, 1),
+                'soc':    round(soc_score, 1),
+                'soh':    round(soh_score, 1),
+                'temp':   round(temp_score, 1),
+                'brake':  round(brake_score, 1),
+                'error':  round(error_score, 1),
+                'sensor': round(sensor_score, 1),
             }
         })
 
@@ -874,16 +982,33 @@ def sim_resume():
 
 @app.route('/api/db/clear', methods=['POST'])
 def db_clear():
-    tables = [
-        'vehicle_telemetry',
-        'lstm_predictions',
-        'geofence_events',
-        'depot_recommendations',
-    ]
+    global _sim_process
+    # Зупиняємо симуляцію перед очищенням
+    if _sim_process and _sim_process.poll() is None:
+        _sim_process.terminate()
+        try:
+            _sim_process.wait(timeout=3)
+        except Exception:
+            _sim_process.kill()
+        _sim_process = None
+    if os.path.exists(PAUSE_FILE):
+        os.remove(PAUSE_FILE)
+
     with psycopg2.connect(DB_CONF) as conn:
         with conn.cursor() as cur:
-            for t in tables:
-                cur.execute(f'TRUNCATE TABLE {t}')
+            cur.execute("""
+                TRUNCATE TABLE
+                    vehicle_telemetry,
+                    lstm_predictions,
+                    geofence_events,
+                    depot_recommendations
+                RESTART IDENTITY
+            """)
+
+    # Сигналізуємо receiver.py скинути geofence_state
+    reset_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'geofence.reset')
+    open(reset_file, 'w').close()
+
     return jsonify({'status': 'cleared'})
 
 

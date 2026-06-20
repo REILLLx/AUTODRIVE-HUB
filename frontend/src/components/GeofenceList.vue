@@ -4,11 +4,11 @@
     <div v-for="e in events.slice(0, 10)" :key="e.timestamp + e.vehicle_code" class="geo-item">
       <div class="geo-top">
         <span class="geo-vid">{{ e.vehicle_code }}</span>
-        <span :class="e.event_type === 'ENTERED' ? 'geo-entered' : 'geo-exited'">
-          {{ e.event_type === 'ENTERED' ? '🟢 В депо' : '🔴 Виїхав' }}
+        <span :class="!e.event_type ? 'geo-unknown' : e.event_type === 'ENTERED' ? 'geo-entered' : 'geo-exited'">
+          {{ !e.event_type ? '⬜ Очікування' : e.event_type === 'ENTERED' ? '🟢 В депо' : '🔴 Виїхав' }}
         </span>
       </div>
-      <div class="geo-meta">{{ e.brand }} {{ e.model }} · {{ new Date(e.timestamp).toLocaleTimeString('uk-UA') }}</div>
+      <div class="geo-meta">{{ e.brand }} {{ e.model }}{{ e.timestamp ? ' · ' + new Date(e.timestamp).toLocaleTimeString('uk-UA') : '' }}</div>
     </div>
   </div>
 </template>
@@ -27,5 +27,6 @@ defineProps({ events: { type: Array, default: () => [] } })
 .geo-vid     { font-family: var(--mono); font-size: .75rem; color: var(--accent); }
 .geo-entered { color: var(--green); font-family: var(--mono); font-size: .65rem; }
 .geo-exited  { color: var(--amber); font-family: var(--mono); font-size: .65rem; }
+.geo-unknown { color: var(--muted); font-family: var(--mono); font-size: .65rem; }
 .geo-meta    { color: var(--muted); font-size: .62rem; }
 </style>

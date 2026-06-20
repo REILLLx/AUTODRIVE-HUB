@@ -5,7 +5,7 @@
     <!-- LEFT SIDEBAR -->
     <aside class="sidebar sidebar-left">
       <div class="s-section">
-        <div class="s-title">Стан флоту</div>
+        <div class="s-title">Стан парку РТЗ</div>
         <div class="stats-row">
           <div class="stat-box">
             <div class="stat-val">{{ activeCount }}</div>
@@ -28,7 +28,7 @@
         <AlertList :alerts="alerts" @ask-ai="openChat" />
       </div>
 
-      <div class="s-section" style="max-height:180px;display:flex;flex-direction:column;">
+<div class="s-section" style="max-height:180px;display:flex;flex-direction:column;">
         <div class="s-title">📍 Моніторинг зони депо</div>
         <GeofenceList :events="geofenceEvents" />
       </div>
@@ -47,7 +47,7 @@
     <aside class="sidebar sidebar-right">
       <div class="s-section" :class="{ collapsed: rCollapsed.health }" style="flex:0 0 auto;">
         <div class="s-title">
-          ❤ Здоров'я автопарку
+          ❤ Здоров'я парку РТЗ
           <button class="collapse-btn" @click="rCollapsed.health = !rCollapsed.health">{{ rCollapsed.health ? '▸' : '▾' }}</button>
         </div>
         <FleetHealth v-show="!rCollapsed.health" :health="fleetHealth" />

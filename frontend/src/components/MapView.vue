@@ -13,6 +13,7 @@
         </div>
         <div class="chart-hdr-right">
           <span class="chart-label">{{ selected ? selected : '← оберіть авто' }}</span>
+          <button v-if="selected" class="btn-clear" @click="$emit('select', null)" title="Скасувати вибір">✕</button>
           <button v-if="selected" class="btn-report" @click="$emit('open-report', selected)">⬇ PDF звіт</button>
         </div>
       </div>
@@ -158,25 +159,32 @@ watch(() => props.vehicles, (vehicles) => {
       markerPositions[v.vehicle_id] = { lat: newLat, lon: newLon }
     }
 
-    // routes
-    fetch(`/api/route/${v.vehicle_id}`)
-      .then(r => r.json())
-      .then(pts => {
-        if (pts.length < 2) return
-        const latlngs = pts.map(p => [p.lat, p.lon])
-        const color = v.active_error_code && !['None', ''].includes(String(v.active_error_code))
-          ? '#ff3d3d' : '#00e5ff'
-        if (routeLines[v.vehicle_id]) {
-          routeLines[v.vehicle_id].setLatLngs(latlngs)
-          routeLines[v.vehicle_id].setStyle({ color })
-        } else {
-          routeLines[v.vehicle_id] = L.polyline(latlngs, {
-            color, weight: 2, opacity: 0.5, dashArray: '4 6',
-          }).addTo(map)
-        }
-      })
   })
 }, { deep: true })
+
+watch(() => props.selected, (vid) => {
+  Object.entries(routeLines).forEach(([id, line]) => {
+    if (id !== vid) { line.remove(); delete routeLines[id] }
+  })
+  if (!vid) return
+  const vehicle = props.vehicles.find(v => v.vehicle_id === vid)
+  fetch(`/api/route/${vid}`)
+    .then(r => r.json())
+    .then(pts => {
+      if (pts.length < 2) return
+      const latlngs = pts.map(p => [p.lat, p.lon])
+      const color = vehicle?.active_error_code && !['None', ''].includes(String(vehicle.active_error_code))
+        ? '#ff3d3d' : '#00e5ff'
+      if (routeLines[vid]) {
+        routeLines[vid].setLatLngs(latlngs)
+        routeLines[vid].setStyle({ color })
+      } else {
+        routeLines[vid] = L.polyline(latlngs, {
+          color, weight: 2, opacity: 0.6, dashArray: '4 6',
+        }).addTo(map)
+      }
+    })
+})
 
 function applyChartData(data, param) {
   if (!socChart || !data.length) return
@@ -228,6 +236,14 @@ watch(chartParam, param => applyChartData(props.chartHistory, param))
 .param-select:hover { border-color: var(--accent); }
 .param-select option { background: #0d1b2a; }
 .chart-label { font-family: var(--mono); font-size: .72rem; color: var(--accent); }
+
+.btn-clear {
+  font-family: var(--mono); font-size: .65rem;
+  padding: 3px 8px; border-radius: 4px; cursor: pointer;
+  background: rgba(255,61,61,.08); border: 1px solid var(--red);
+  color: var(--red); transition: .2s;
+}
+.btn-clear:hover { background: rgba(255,61,61,.2); }
 
 .btn-report {
   font-family: var(--mono); font-size: .65rem;

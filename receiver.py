@@ -10,11 +10,12 @@ import re
 import os
 
 KAFKA_CONF = {
-    'bootstrap.servers': os.environ.get('KAFKA_BOOTSTRAP', 'localhost:9092'),
+    'bootstrap.servers': os.environ.get('KAFKA_BOOTSTRAP', 'localhost:29092'),
     'group.id': 'ev_group',
     'auto.offset.reset': 'earliest'
 }
-DB_CONF = os.environ.get('DB_CONF', 'host=127.0.0.1 dbname=ev_telemetry_db user=admin password=root port=5432')
+DB_CONF      = os.environ.get('DB_CONF', 'host=127.0.0.1 dbname=ev_telemetry_db user=admin password=root port=5432')
+RESET_FILE   = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'geofence.reset')
 
 DEPOT_CONFIG = {
     vid: {"lat": 50.4501, "lon": 30.5234, "radius_m": 100}
@@ -24,6 +25,16 @@ DEPOT_CONFIG = {
 print("🧠 Завантаження модулів: LSTM + Gemini...")
 model  = load_model('ev_model.keras')
 scaler = joblib.load('scaler.gz')
+
+
+def load_depot_vehicles() -> set:
+    with psycopg2.connect(DB_CONF) as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT vehicle_code FROM vehicles WHERE is_depot = TRUE")
+            return {row[0] for row in cur.fetchall()}
+
+DEPOT_VEHICLES = load_depot_vehicles()
+print(f"🏭 Депо-авто: {DEPOT_VEHICLES}")
 
 history_buffer = {}
 geofence_state = {}
@@ -59,6 +70,7 @@ def check_geofence(v_id_code: str, lat: float, lon: float, conn):
     dist   = haversine_m(lat, lon, cfg["lat"], cfg["lon"])
     inside = dist <= cfg["radius_m"]
     prev   = geofence_state.get(v_id_code)
+
 
     if prev is None:
         geofence_state[v_id_code] = inside
@@ -113,7 +125,9 @@ def check_return_recommendation(v_id_code: str, current_soc: float,
         cur.execute("""
             SELECT id FROM depot_recommendations
             WHERE vehicle_id = (SELECT id FROM vehicles WHERE vehicle_code = %s)
-              AND status = 'active'
+              AND (status = 'active'
+                   OR (status = 'dismissed'
+                       AND created_at > NOW() - INTERVAL '5 minutes'))
         """, (v_id_code,))
         if cur.fetchone():
             return
@@ -128,6 +142,7 @@ def check_return_recommendation(v_id_code: str, current_soc: float,
     print(f"🔔 РЕКОМЕНДАЦІЯ: {v_id_code} -> повернутись в депо | {reason} | {dist_m:.0f}м")
 
 
+
 def run_receiver():
     consumer = Consumer(KAFKA_CONF)
     consumer.subscribe(['ev_telemetry'])
@@ -135,6 +150,12 @@ def run_receiver():
 
     try:
         while True:
+            # Скидаємо geofence_state якщо dashboard очистив БД
+            if os.path.exists(RESET_FILE):
+                geofence_state.clear()
+                os.remove(RESET_FILE)
+                print("🔄 Стан скинуто після очищення БД")
+
             msg = consumer.poll(1.0)
             if msg is None:
                 continue
@@ -147,34 +168,44 @@ def run_receiver():
             speed       = data['location']['speed_kph']
             current_soc = data['energy_system']['soc_pct']
 
-            current_features = [
-                current_soc,
-                speed,
-                data['energy_system']['battery_temp_c'],
-            ]
-            if v_id_code not in history_buffer:
-                history_buffer[v_id_code] = []
-            history_buffer[v_id_code].append(current_features)
-            if len(history_buffer[v_id_code]) > 40:
-                history_buffer[v_id_code].pop(0)
+            sensor_status        = data.get('sensor_status', {})
+            camera_blinded = sensor_status.get('camera_blinded', False)
+            sensor_array_status  = sensor_status.get('sensor_array_status', 'OK')
+            ad_mode              = sensor_status.get('ad_mode', 'AUTONOMOUS')
+
+            # Визначаємо sensor_fault_code
+            if sensor_array_status == 'DEGRADED':
+                sensor_fault_code = 'SENSOR_ARR_DEGRADED'
+            elif camera_blinded:
+                sensor_fault_code = 'SENSOR_CAM_BLIND'
+            else:
+                sensor_fault_code = None
 
             pred_real = None
-            if len(history_buffer[v_id_code]) >= 40:
-                input_seq    = np.array(history_buffer[v_id_code][-40:])
-                input_scaled = scaler.transform(input_seq)
-                input_final  = np.reshape(input_scaled, (1, 40, 3))
-                pred_scaled  = model.predict(input_final, verbose=0)
-                dummy        = np.zeros((1, 3))
-                dummy[0, 0]  = pred_scaled[0, 0]
-                pred_real    = scaler.inverse_transform(dummy)[0, 0]
-                pred_real    = max(0.0, min(100.0, pred_real))
+            if v_id_code not in DEPOT_VEHICLES:
+                current_features = [
+                    current_soc,
+                    speed,
+                    data['energy_system']['battery_temp_c'],
+                ]
+                if v_id_code not in history_buffer:
+                    history_buffer[v_id_code] = []
+                history_buffer[v_id_code].append(current_features)
+                if len(history_buffer[v_id_code]) > 40:
+                    history_buffer[v_id_code].pop(0)
 
-                if v_id_code not in ('Tesla_01', 'Hyundai_02'):
+                if len(history_buffer[v_id_code]) >= 40:
+                    input_seq    = np.array(history_buffer[v_id_code][-40:])
+                    input_scaled = scaler.transform(input_seq)
+                    input_final  = np.reshape(input_scaled, (1, 40, 3))
+                    pred_scaled  = model.predict(input_final, verbose=0)
+                    dummy        = np.zeros((1, 3))
+                    dummy[0, 0]  = pred_scaled[0, 0]
+                    pred_real    = scaler.inverse_transform(dummy)[0, 0]
+                    pred_real    = max(0.0, min(100.0, pred_real))
                     print(f"🚗 {v_id_code} | SOC: {current_soc}% | ПРОГНОЗ: {pred_real:.2f}%")
                     if pred_real < 15.0:
                         print(f"🚨 ALERT: Критично низький прогноз заряду для {v_id_code}!")
-                else:
-                    pred_real = None
 
             with psycopg2.connect(DB_CONF) as conn:
                 with conn.cursor() as cur:
@@ -183,10 +214,13 @@ def run_receiver():
                             (vehicle_id, timestamp, lat, lon, speed_kph,
                              soc_pct, soh_pct, battery_temp_c,
                              brake_pad_wear_mm, abs_fault_indicator, active_error_code,
-                             battery_current_a, acceleration_ms2, ambient_temp_c, power_kw)
+                             battery_current_a, acceleration_ms2, ambient_temp_c, power_kw,
+                             ad_mode, camera_blinded,
+                             sensor_array_status, sensor_fault_code)
                         VALUES
                             ((SELECT id FROM vehicles WHERE vehicle_code = %s),
-                             %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                             %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                             %s, %s, %s, %s)
                     """, (
                         v_id_code,
                         data['vehicle_metadata']['timestamp'],
@@ -201,6 +235,8 @@ def run_receiver():
                         data['sensors']['acceleration_ms2'],
                         data['sensors']['ambient_temp_c'],
                         data['sensors']['power_kw'],
+                        ad_mode, camera_blinded,
+                        sensor_array_status, sensor_fault_code,
                     ))
 
                     if pred_real is not None:
@@ -217,6 +253,7 @@ def run_receiver():
                     check_return_recommendation(
                         v_id_code, current_soc, pred_real, lat, lon, conn
                     )
+
 
     except KeyboardInterrupt:
         print("⛔ Зупинка.")

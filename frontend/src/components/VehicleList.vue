@@ -32,6 +32,11 @@
       <div class="soc-bar">
         <div class="soc-fill" :class="socFillCls(v.soc_pct)" :style="{ width: (v.soc_pct || 0) + '%' }"></div>
       </div>
+      <div class="robotics-row">
+        <span class="rb-badge" :class="modeCls(v.ad_mode)">{{ modeLabel(v.ad_mode) }}</span>
+        <span class="rb-badge arr-badge" :class="arrCls(v.sensor_array_status)">{{ arrLabel(v.sensor_array_status) }}</span>
+        <span v-if="v.camera_blinded" class="rb-alert" title="Засліплення камери">📷✕</span>
+      </div>
     </div>
   </div>
 </template>
@@ -53,6 +58,7 @@ function fmt(val, decimals) {
 
 function statusClass(v) {
   if (v.active_error_code && !['None', '', 'null'].includes(String(v.active_error_code))) return 'error'
+  if (v.sensor_fault_code) return 'warn'
   if (v.soc_pct !== null && v.soc_pct < 20) return 'warn'
   if (v.battery_temp_c !== null && v.battery_temp_c > 55) return 'warn'
   return 'ok'
@@ -69,6 +75,34 @@ function badgeTxt(v) {
 function socFillCls(soc) {
   if (soc == null) return ''
   return soc < 15 ? 'crit' : soc < 25 ? 'low' : ''
+}
+
+function modeCls(mode) {
+  if (mode === 'AUTONOMOUS')      return 'mode-auto'
+  if (mode === 'MANUAL_OVERRIDE') return 'mode-manual'
+  if (mode === 'MANUAL')          return 'mode-manual'
+  if (mode === 'SAFE_STOP')       return 'mode-safestop'
+  return 'mode-standby'
+}
+
+function modeLabel(mode) {
+  return {
+    AUTONOMOUS:      'АВТО',
+    MANUAL_OVERRIDE: 'ДИСТ. КЕР.',
+    MANUAL:          'ДИСТ. КЕР.',
+    SAFE_STOP:       'ЗУПИНКА',
+    STANDBY:         'ОЧІКУВАННЯ',
+  }[mode] || '—'
+}
+
+function arrCls(status) {
+  if (status === 'DEGRADED') return 'arr-degraded'
+  if (status === 'ERROR')    return 'arr-error'
+  return 'arr-ok'
+}
+
+function arrLabel(status) {
+  return { OK: 'LiDAR ✓', DEGRADED: 'LiDAR ⚠', ERROR: 'LiDAR ✕' }[status] || 'LiDAR ✓'
 }
 </script>
 
@@ -105,6 +139,23 @@ function socFillCls(soc) {
 .soc-fill { height: 100%; border-radius: 2px; transition: width .8s ease; background: var(--green); }
 .soc-fill.low  { background: var(--amber); }
 .soc-fill.crit { background: var(--red); }
+
+.robotics-row {
+  display: flex; align-items: center; gap: 6px; margin-top: 5px;
+  font-family: var(--mono); font-size: .58rem;
+}
+.rb-badge {
+  padding: 1px 6px; border-radius: 8px; font-size: .55rem; letter-spacing: .04em;
+}
+.mode-auto     { background: rgba(0,229,255,.12);  color: var(--accent); }
+.mode-manual   { background: rgba(255,179,0,.12);  color: var(--amber); }
+.mode-safestop { background: rgba(255,61,61,.15);  color: var(--red); }
+.mode-standby  { background: rgba(255,255,255,.06); color: var(--muted); }
+.arr-badge  { font-size: .52rem; }
+.arr-ok       { background: rgba(0,255,136,.08);  color: var(--green); }
+.arr-degraded { background: rgba(255,179,0,.12);  color: var(--amber); }
+.arr-error    { background: rgba(255,61,61,.15);  color: var(--red); }
+.rb-alert { color: var(--red); font-size: .7rem; cursor: default; }
 
 .info-btn {
   background: rgba(0,229,255,.08); border: 1px solid var(--border);

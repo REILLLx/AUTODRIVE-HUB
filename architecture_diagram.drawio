@@ -1,0 +1,382 @@
+<mxfile host="app.diagrams.net" modified="2026-05-31T00:00:00.000Z" agent="Claude" version="21.0.0">
+  <diagram name="Архітектура системи" id="arch-ev-fleet">
+    <mxGraphModel dx="1500" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1900" pageHeight="900" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- ===== TITLE ===== -->
+        <mxCell id="TITLE" value="ІСППР Моніторингу Електричного Автопарку — Архітектура Системи" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;fontSize=16;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="20" y="10" width="1860" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- ===== DOCKER COMPOSE BANNER ===== -->
+        <mxCell id="DOCKER_BG" value="🐳  Docker Compose — оркестрація контейнерів (Zookeeper · Kafka · PostgreSQL · Dashboard · Receiver · pgAdmin · Kafka UI)" style="rounded=1;whiteSpace=wrap;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;fontStyle=2;" vertex="1" parent="1">
+          <mxGeometry x="20" y="840" width="1860" height="35" as="geometry" />
+        </mxCell>
+
+        <!-- =====================================================
+             LAYER 1 — DATA GENERATION
+             ===================================================== -->
+        <mxCell id="L1" value="Шар генерації даних" style="swimlane;startSize=30;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;fontSize=11;rounded=1;swimlaneHead=0;" vertex="1" parent="1">
+          <mxGeometry x="20" y="55" width="240" height="775" as="geometry" />
+        </mxCell>
+
+        <!-- EV Fleet box -->
+        <mxCell id="EV_FLEET" value="🚗  Автопарк ЕТЗ&#xa;5 транспортних засобів:&#xa;Tesla_01 · Tesla_02&#xa;Hyundai_01 · Hyundai_02&#xa;VW_01" style="rounded=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=9;align=center;" vertex="1" parent="L1">
+          <mxGeometry x="20" y="40" width="200" height="90" as="geometry" />
+        </mxCell>
+
+        <!-- Generator -->
+        <mxCell id="GEN" value="generators/&#xa;Генератор синтетичних&#xa;даних (CSV)" style="rounded=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=9;" vertex="1" parent="L1">
+          <mxGeometry x="20" y="160" width="200" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- CSV dataset -->
+        <mxCell id="CSV" value="📄  synthetic_ev_data_send.csv&#xa;Телеметрія автопарку" style="shape=mxgraph.flowchart.stored_data;whiteSpace=wrap;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=9;" vertex="1" parent="L1">
+          <mxGeometry x="20" y="250" width="200" height="55" as="geometry" />
+        </mxCell>
+
+        <!-- sender.py -->
+        <mxCell id="SENDER" value="sender.py&#xa;Kafka Producer&#xa;topic: ev_telemetry&#xa;interval: 0.5 s / msg" style="rounded=1;whiteSpace=wrap;fillColor=#6c8ebf;strokeColor=#23445d;fontSize=9;fontStyle=1;fontColor=#ffffff;" vertex="1" parent="L1">
+          <mxGeometry x="20" y="335" width="200" height="70" as="geometry" />
+        </mxCell>
+
+        <!-- Training section divider -->
+        <mxCell id="TRAIN_LABEL" value="— Офлайн навчання —" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=9;fontStyle=2;fontColor=#555555;" vertex="1" parent="L1">
+          <mxGeometry x="20" y="430" width="200" height="20" as="geometry" />
+        </mxCell>
+
+        <!-- train_lstm.py -->
+        <mxCell id="TRAIN" value="train_lstm.py&#xa;Навчання LSTM моделі&#xa;features: SOC · Speed · Temp&#xa;window=40 · horizon=120 кроків" style="rounded=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=9;dashed=1;" vertex="1" parent="L1">
+          <mxGeometry x="20" y="460" width="200" height="75" as="geometry" />
+        </mxCell>
+
+        <!-- Training dataset -->
+        <mxCell id="CSV_TRAIN" value="📄  synthetic_ev_data_train.csv&#xa;Тренувальний набір" style="shape=mxgraph.flowchart.stored_data;whiteSpace=wrap;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=9;" vertex="1" parent="L1">
+          <mxGeometry x="20" y="560" width="200" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- Model artifacts -->
+        <mxCell id="MODEL_FILES" value="ev_model.keras&#xa;scaler.gz&#xa;(артефакти моделі)" style="shape=mxgraph.flowchart.stored_data;whiteSpace=wrap;fillColor=#ffe6cc;strokeColor=#d6b656;fontSize=9;" vertex="1" parent="L1">
+          <mxGeometry x="20" y="635" width="200" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- =====================================================
+             LAYER 2 — MESSAGE BROKER
+             ===================================================== -->
+        <mxCell id="L2" value="Брокер повідомлень" style="swimlane;startSize=30;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;fontSize=11;rounded=1;" vertex="1" parent="1">
+          <mxGeometry x="280" y="55" width="220" height="775" as="geometry" />
+        </mxCell>
+
+        <!-- Zookeeper -->
+        <mxCell id="ZK" value="Apache Zookeeper&#xa;port: 2181&#xa;Координація брокера Kafka" style="rounded=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#82b366;fontSize=9;" vertex="1" parent="L2">
+          <mxGeometry x="20" y="40" width="180" height="65" as="geometry" />
+        </mxCell>
+
+        <!-- Kafka -->
+        <mxCell id="KAFKA" value="Apache Kafka&#xa;port: 9092 (internal)&#xa;port: 29092 (external)&#xa;Broker ID: 1" style="rounded=1;whiteSpace=wrap;fillColor=#82b366;strokeColor=#2d6a2d;fontSize=9;fontStyle=1;fontColor=#ffffff;" vertex="1" parent="L2">
+          <mxGeometry x="20" y="135" width="180" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- Topic -->
+        <mxCell id="TOPIC" value="Topic: ev_telemetry&#xa;JSON-пакети телеметрії&#xa;{ vehicle_metadata,&#xa;  location, energy_system,&#xa;  mechanical_system,&#xa;  diagnostics, sensors }" style="shape=mxgraph.flowchart.queue;whiteSpace=wrap;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=9;" vertex="1" parent="L2">
+          <mxGeometry x="20" y="245" width="180" height="110" as="geometry" />
+        </mxCell>
+
+        <!-- Kafka UI -->
+        <mxCell id="KUI" value="Kafka UI&#xa;port: 8080&#xa;Моніторинг топіків&#xa;та повідомлень" style="rounded=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#82b366;fontSize=9;dashed=1;" vertex="1" parent="L2">
+          <mxGeometry x="20" y="390" width="180" height="65" as="geometry" />
+        </mxCell>
+
+        <!-- =====================================================
+             LAYER 3 — PROCESSING / AI
+             ===================================================== -->
+        <mxCell id="L3" value="Шар обробки та ШІ" style="swimlane;startSize=30;fillColor=#ffe6cc;strokeColor=#d6b656;fontStyle=1;fontSize=11;rounded=1;" vertex="1" parent="1">
+          <mxGeometry x="520" y="55" width="250" height="775" as="geometry" />
+        </mxCell>
+
+        <!-- receiver.py -->
+        <mxCell id="RECV" value="receiver.py&#xa;Kafka Consumer&#xa;group.id: ev_group&#xa;auto.offset.reset: earliest" style="rounded=1;whiteSpace=wrap;fillColor=#d6b656;strokeColor=#8a6900;fontSize=9;fontStyle=1;fontColor=#ffffff;" vertex="1" parent="L3">
+          <mxGeometry x="20" y="40" width="210" height="70" as="geometry" />
+        </mxCell>
+
+        <!-- LSTM inference -->
+        <mxCell id="LSTM_INF" value="🧠  LSTM Інференс (онлайн)&#xa;Завантаження ev_model.keras&#xa;Вікно: 40 кроків (20 хв)&#xa;Прогноз SOC через 1 год&#xa;Features: SOC · Speed · Temp&#xa;Output: predicted_soc %" style="rounded=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#d6b656;fontSize=9;" vertex="1" parent="L3">
+          <mxGeometry x="20" y="140" width="210" height="105" as="geometry" />
+        </mxCell>
+
+        <!-- Geofence engine -->
+        <mxCell id="GEO_ENGINE" value="📍  Геофенс-движок&#xa;Depot: lat=50.4501 lon=30.5234&#xa;Радіус: 100 м (haversine)&#xa;Events: ENTERED / EXITED" style="rounded=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#d6b656;fontSize=9;" vertex="1" parent="L3">
+          <mxGeometry x="20" y="275" width="210" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- Recommendations engine -->
+        <mxCell id="REC_ENGINE" value="🔔  Рушій рекомендацій&#xa;SOC &lt; 15% → критичний заряд&#xa;pred_SOC &lt; 20% → прогноз&#xa;Δ SOC/h &gt; 5% → розряд&#xa;Temp &gt; 50°C → перегрів&#xa;SOH &lt; 85% → знос батареї&#xa;Brake &lt; 4 мм → знос колодок" style="rounded=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#d6b656;fontSize=9;" vertex="1" parent="L3">
+          <mxGeometry x="20" y="380" width="210" height="115" as="geometry" />
+        </mxCell>
+
+        <!-- Gemini AI -->
+        <mxCell id="GEMINI" value="🤖  Gemini AI Chat Assistant&#xa;chat_assistant_gemini.py&#xa;knowledge_base.md&#xa;DTC-діагностика та поради&#xa;Багатосесійний чат" style="rounded=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#d6b656;fontSize=9;dashed=1;" vertex="1" parent="L3">
+          <mxGeometry x="20" y="525" width="210" height="90" as="geometry" />
+        </mxCell>
+
+        <!-- =====================================================
+             LAYER 4 — STORAGE
+             ===================================================== -->
+        <mxCell id="L4" value="Сховище даних" style="swimlane;startSize=30;fillColor=#f8cecc;strokeColor=#b85450;fontStyle=1;fontSize=11;rounded=1;" vertex="1" parent="1">
+          <mxGeometry x="790" y="55" width="220" height="775" as="geometry" />
+        </mxCell>
+
+        <!-- PostgreSQL -->
+        <mxCell id="PG" value="PostgreSQL 15&#xa;port: 5432&#xa;DB: ev_telemetry_db&#xa;user: admin" style="shape=mxgraph.flowchart.database;whiteSpace=wrap;fillColor=#b85450;strokeColor=#6a2120;fontSize=10;fontStyle=1;fontColor=#ffffff;" vertex="1" parent="L4">
+          <mxGeometry x="20" y="40" width="180" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- Tables group -->
+        <mxCell id="TBL_HEAD" value="Таблиці БД" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=9;fontStyle=1;" vertex="1" parent="L4">
+          <mxGeometry x="20" y="140" width="180" height="20" as="geometry" />
+        </mxCell>
+
+        <mxCell id="T_VEH" value="vehicles&#xa;(vehicle_code, brand, model, plate)" style="rounded=0;whiteSpace=wrap;fillColor=#f8cecc;strokeColor=#b85450;fontSize=8;" vertex="1" parent="L4">
+          <mxGeometry x="20" y="162" width="180" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="T_TEL" value="vehicle_telemetry&#xa;(lat, lon, speed, SOC, SOH, temp, ...)" style="rounded=0;whiteSpace=wrap;fillColor=#f8cecc;strokeColor=#b85450;fontSize=8;" vertex="1" parent="L4">
+          <mxGeometry x="20" y="200" width="180" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="T_LSTM" value="lstm_predictions&#xa;(current_soc, predicted_soc, ts)" style="rounded=0;whiteSpace=wrap;fillColor=#f8cecc;strokeColor=#b85450;fontSize=8;" vertex="1" parent="L4">
+          <mxGeometry x="20" y="238" width="180" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="T_GEO" value="geofence_events&#xa;(event_type, lat, lon, distance_m)" style="rounded=0;whiteSpace=wrap;fillColor=#f8cecc;strokeColor=#b85450;fontSize=8;" vertex="1" parent="L4">
+          <mxGeometry x="20" y="276" width="180" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="T_REC" value="depot_recommendations&#xa;(reason, status, soc, predicted_soc)" style="rounded=0;whiteSpace=wrap;fillColor=#f8cecc;strokeColor=#b85450;fontSize=8;" vertex="1" parent="L4">
+          <mxGeometry x="20" y="314" width="180" height="38" as="geometry" />
+        </mxCell>
+
+        <!-- Persistent volume -->
+        <mxCell id="VOL" value="postgres_data volume&#xa;Персистентне сховище" style="shape=mxgraph.cisco.storage.storage_server;whiteSpace=wrap;fillColor=#f8cecc;strokeColor=#b85450;fontSize=9;" vertex="1" parent="L4">
+          <mxGeometry x="20" y="385" width="180" height="55" as="geometry" />
+        </mxCell>
+
+        <!-- pgAdmin -->
+        <mxCell id="PGA" value="pgAdmin 4&#xa;port: 5050&#xa;Адміністрування БД" style="rounded=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#b85450;fontSize=9;dashed=1;" vertex="1" parent="L4">
+          <mxGeometry x="20" y="470" width="180" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- =====================================================
+             LAYER 5 — BACKEND API
+             ===================================================== -->
+        <mxCell id="L5" value="Backend API" style="swimlane;startSize=30;fillColor=#e1d5e7;strokeColor=#9673a6;fontStyle=1;fontSize=11;rounded=1;" vertex="1" parent="1">
+          <mxGeometry x="1030" y="55" width="230" height="775" as="geometry" />
+        </mxCell>
+
+        <!-- Flask server -->
+        <mxCell id="FLASK" value="Flask (dashboard.py)&#xa;port: 5000&#xa;Serves SPA + REST API&#xa;PDF Report Generator" style="rounded=1;whiteSpace=wrap;fillColor=#9673a6;strokeColor=#4d3a5a;fontSize=9;fontStyle=1;fontColor=#ffffff;" vertex="1" parent="L5">
+          <mxGeometry x="20" y="40" width="190" height="75" as="geometry" />
+        </mxCell>
+
+        <!-- Endpoints group -->
+        <mxCell id="EP_HEAD" value="REST API Endpoints" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=9;fontStyle=1;" vertex="1" parent="L5">
+          <mxGeometry x="20" y="128" width="190" height="20" as="geometry" />
+        </mxCell>
+
+        <mxCell id="E1" value="GET  /api/fleet" style="rounded=0;whiteSpace=wrap;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=8;" vertex="1" parent="L5">
+          <mxGeometry x="20" y="150" width="190" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="E2" value="GET  /api/alerts" style="rounded=0;whiteSpace=wrap;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=8;" vertex="1" parent="L5">
+          <mxGeometry x="20" y="174" width="190" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="E3" value="GET  /api/predictions" style="rounded=0;whiteSpace=wrap;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=8;" vertex="1" parent="L5">
+          <mxGeometry x="20" y="198" width="190" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="E4" value="GET  /api/geofence/events · /status" style="rounded=0;whiteSpace=wrap;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=8;" vertex="1" parent="L5">
+          <mxGeometry x="20" y="222" width="190" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="E5" value="GET  /api/recommendations/combined" style="rounded=0;whiteSpace=wrap;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=8;" vertex="1" parent="L5">
+          <mxGeometry x="20" y="246" width="190" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="E6" value="GET  /api/fleet_health" style="rounded=0;whiteSpace=wrap;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=8;" vertex="1" parent="L5">
+          <mxGeometry x="20" y="270" width="190" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="E7" value="GET  /api/chart/{id} · /route/{id}" style="rounded=0;whiteSpace=wrap;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=8;" vertex="1" parent="L5">
+          <mxGeometry x="20" y="294" width="190" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="E8" value="GET  /api/report/{id}  (PDF)" style="rounded=0;whiteSpace=wrap;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=8;" vertex="1" parent="L5">
+          <mxGeometry x="20" y="318" width="190" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="E9" value="POST /api/chat/init · /message" style="rounded=0;whiteSpace=wrap;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=8;" vertex="1" parent="L5">
+          <mxGeometry x="20" y="342" width="190" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="E10" value="POST /api/simulation/start · stop · pause" style="rounded=0;whiteSpace=wrap;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=8;" vertex="1" parent="L5">
+          <mxGeometry x="20" y="366" width="190" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="E11" value="POST /api/db/clear" style="rounded=0;whiteSpace=wrap;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=8;" vertex="1" parent="L5">
+          <mxGeometry x="20" y="390" width="190" height="24" as="geometry" />
+        </mxCell>
+
+        <!-- Simulation control -->
+        <mxCell id="SIM_CTRL" value="Управління симуляцією&#xa;Запуск sender.py як subprocess&#xa;Pause / Resume / Stop" style="rounded=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#9673a6;fontSize=9;" vertex="1" parent="L5">
+          <mxGeometry x="20" y="435" width="190" height="65" as="geometry" />
+        </mxCell>
+
+        <!-- =====================================================
+             LAYER 6 — FRONTEND
+             ===================================================== -->
+        <mxCell id="L6" value="Фронтенд (Vue.js SPA)" style="swimlane;startSize=30;fillColor=#fff2cc;strokeColor=#d6b656;fontStyle=1;fontSize=11;rounded=1;" vertex="1" parent="1">
+          <mxGeometry x="1280" y="55" width="240" height="775" as="geometry" />
+        </mxCell>
+
+        <!-- Vue App -->
+        <mxCell id="VUE_APP" value="Vue.js 3 SPA&#xa;frontend/dist/index.html&#xa;Axios HTTP · Polling 5 s" style="rounded=1;whiteSpace=wrap;fillColor=#d6b656;strokeColor=#856400;fontSize=9;fontStyle=1;fontColor=#ffffff;" vertex="1" parent="L6">
+          <mxGeometry x="20" y="40" width="200" height="65" as="geometry" />
+        </mxCell>
+
+        <!-- Components -->
+        <mxCell id="UI_HEAD" value="Компоненти інтерфейсу" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=9;fontStyle=1;" vertex="1" parent="L6">
+          <mxGeometry x="20" y="118" width="200" height="20" as="geometry" />
+        </mxCell>
+
+        <mxCell id="C_MAP" value="🗺️  MapView&#xa;Leaflet карта · Маршрути · Маркери" style="rounded=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#d6b656;fontSize=9;" vertex="1" parent="L6">
+          <mxGeometry x="20" y="142" width="200" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="C_VEH" value="🚗  VehicleList + VehicleDetailModal&#xa;Список авто · Деталі · PDF звіт" style="rounded=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#d6b656;fontSize=9;" vertex="1" parent="L6">
+          <mxGeometry x="20" y="192" width="200" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="C_ALT" value="🚨  AlertList&#xa;Активні помилки DTC" style="rounded=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#d6b656;fontSize=9;" vertex="1" parent="L6">
+          <mxGeometry x="20" y="242" width="200" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="C_PRED" value="📊  PredictionList&#xa;LSTM-прогнози SOC (1 год)" style="rounded=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#d6b656;fontSize=9;" vertex="1" parent="L6">
+          <mxGeometry x="20" y="287" width="200" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="C_GEO" value="📍  GeofenceList&#xa;Події ENTERED / EXITED депо" style="rounded=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#d6b656;fontSize=9;" vertex="1" parent="L6">
+          <mxGeometry x="20" y="332" width="200" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="C_REC" value="🔔  RecommendationList&#xa;Рекомендації · Critical · Warning" style="rounded=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#d6b656;fontSize=9;" vertex="1" parent="L6">
+          <mxGeometry x="20" y="377" width="200" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="C_HLT" value="❤️  FleetHealth&#xa;Зведений показник здоров'я" style="rounded=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#d6b656;fontSize=9;" vertex="1" parent="L6">
+          <mxGeometry x="20" y="422" width="200" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="C_APP" value="AppHeader · Керування симуляцією&#xa;Start · Pause · Stop · Clear DB" style="rounded=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#d6b656;fontSize=9;" vertex="1" parent="L6">
+          <mxGeometry x="20" y="467" width="200" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="C_CHAT" value="💬  ChatOverlay&#xa;AI-асистент (Gemini)&#xa;DTC-діагностика · Поради" style="rounded=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#d6b656;fontSize=9;" vertex="1" parent="L6">
+          <mxGeometry x="20" y="512" width="200" height="55" as="geometry" />
+        </mxCell>
+
+        <!-- =====================================================
+             CONNECTIONS (all in parent="1")
+             ===================================================== -->
+
+        <!-- GEN → CSV_TRAIN (inside L1, but edge in root) -->
+        <mxCell id="CN_GEN_CSV" value="" style="edgeStyle=orthogonalEdgeStyle;exitX=0.5;exitY=1;entryX=0.5;entryY=0;strokeColor=#6c8ebf;" edge="1" source="GEN" target="CSV" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- CSV → SENDER -->
+        <mxCell id="CN_CSV_SEND" value="читає рядки" style="edgeStyle=orthogonalEdgeStyle;exitX=0.5;exitY=1;entryX=0.5;entryY=0;strokeColor=#6c8ebf;fontSize=8;" edge="1" source="CSV" target="SENDER" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- CSV_TRAIN → TRAIN -->
+        <mxCell id="CN_CSVT_TRAIN" value="" style="edgeStyle=orthogonalEdgeStyle;exitX=0.5;exitY=1;entryX=0.5;entryY=0;strokeColor=#6c8ebf;" edge="1" source="CSV_TRAIN" target="TRAIN" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- TRAIN → MODEL_FILES -->
+        <mxCell id="CN_TRAIN_MODEL" value="зберігає&#xa;модель" style="edgeStyle=orthogonalEdgeStyle;exitX=0.5;exitY=1;entryX=0.5;entryY=0;strokeColor=#6c8ebf;fontSize=8;" edge="1" source="TRAIN" target="MODEL_FILES" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- ZK → KAFKA -->
+        <mxCell id="CN_ZK_KAFKA" value="координує" style="edgeStyle=orthogonalEdgeStyle;exitX=0.5;exitY=1;entryX=0.5;entryY=0;strokeColor=#82b366;fontSize=8;" edge="1" source="ZK" target="KAFKA" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- KAFKA → TOPIC -->
+        <mxCell id="CN_KAFKA_TOPIC" value="" style="edgeStyle=orthogonalEdgeStyle;exitX=0.5;exitY=1;entryX=0.5;entryY=0;strokeColor=#82b366;" edge="1" source="KAFKA" target="TOPIC" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- SENDER → KAFKA (cross layer, thick) -->
+        <mxCell id="CN_SENDER_KAFKA" value="produce JSON&#xa;0.5 s/msg" style="edgeStyle=orthogonalEdgeStyle;exitX=1;exitY=0.5;entryX=0;entryY=0.5;strokeColor=#23445d;strokeWidth=3;fontStyle=1;fontSize=8;" edge="1" source="SENDER" target="KAFKA" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- TOPIC → RECV (cross layer, thick) -->
+        <mxCell id="CN_TOPIC_RECV" value="consume&#xa;ev_telemetry" style="edgeStyle=orthogonalEdgeStyle;exitX=1;exitY=0.5;entryX=0;entryY=0.5;strokeColor=#2d6a2d;strokeWidth=3;fontStyle=1;fontSize=8;" edge="1" source="TOPIC" target="RECV" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- RECV → LSTM_INF -->
+        <mxCell id="CN_RECV_LSTM" value="40 кроків" style="edgeStyle=orthogonalEdgeStyle;exitX=0.5;exitY=1;entryX=0.5;entryY=0;strokeColor=#d6b656;fontSize=8;" edge="1" source="RECV" target="LSTM_INF" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- RECV → GEO_ENGINE -->
+        <mxCell id="CN_RECV_GEO" value="lat/lon" style="edgeStyle=orthogonalEdgeStyle;exitX=0.5;exitY=1;entryX=0.5;entryY=0;strokeColor=#d6b656;fontSize=8;" edge="1" source="LSTM_INF" target="GEO_ENGINE" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- GEO → REC -->
+        <mxCell id="CN_GEO_REC" value="dist to depot" style="edgeStyle=orthogonalEdgeStyle;exitX=0.5;exitY=1;entryX=0.5;entryY=0;strokeColor=#d6b656;fontSize=8;" edge="1" source="GEO_ENGINE" target="REC_ENGINE" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- MODEL_FILES → LSTM_INF (model loading) -->
+        <mxCell id="CN_MODEL_LSTM" value="завантажує&#xa;модель" style="edgeStyle=orthogonalEdgeStyle;exitX=1;exitY=0.5;entryX=0;entryY=0.5;strokeColor=#d6b656;dashed=1;fontSize=8;" edge="1" source="MODEL_FILES" target="LSTM_INF" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="770" y="685" />
+              <mxPoint x="770" y="225" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- RECV → PostgreSQL (main write) -->
+        <mxCell id="CN_RECV_PG" value="INSERT:&#xa;telemetry&#xa;predictions&#xa;events&#xa;recommendations" style="edgeStyle=orthogonalEdgeStyle;exitX=1;exitY=0.5;entryX=0;entryY=0.5;strokeColor=#8a6900;strokeWidth=3;fontStyle=1;fontSize=8;" edge="1" source="RECV" target="PG" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- PostgreSQL → Flask (read) -->
+        <mxCell id="CN_PG_FLASK" value="SELECT / QUERY" style="edgeStyle=orthogonalEdgeStyle;exitX=1;exitY=0.5;entryX=0;entryY=0.5;strokeColor=#6a2120;strokeWidth=3;fontStyle=1;fontSize=8;" edge="1" source="PG" target="FLASK" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Flask → VUE_APP (REST JSON) -->
+        <mxCell id="CN_FLASK_VUE" value="REST JSON&#xa;HTTP polling 5 s" style="edgeStyle=orthogonalEdgeStyle;exitX=1;exitY=0.5;entryX=0;entryY=0.5;strokeColor=#4d3a5a;strokeWidth=3;fontStyle=1;fontSize=8;" edge="1" source="FLASK" target="VUE_APP" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- GEMINI ↔ FLASK (chat API) -->
+        <mxCell id="CN_GEM_FLASK" value="AI відповіді" style="edgeStyle=orthogonalEdgeStyle;exitX=1;exitY=0.5;entryX=0;entryY=0.7;strokeColor=#9673a6;dashed=1;fontSize=8;" edge="1" source="GEMINI" target="FLASK" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1010" y="580" />
+              <mxPoint x="1010" y="490" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- SIM_CTRL → SENDER (subprocess) -->
+        <mxCell id="CN_SIM_SENDER" value="subprocess.Popen&#xa;sender.py" style="edgeStyle=orthogonalEdgeStyle;exitX=0;exitY=0.5;entryX=1;entryY=0.5;strokeColor=#9673a6;dashed=1;fontSize=8;" edge="1" source="SIM_CTRL" target="SENDER" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="980" y="468" />
+              <mxPoint x="980" y="800" />
+              <mxPoint x="120" y="800" />
+              <mxPoint x="120" y="370" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- VOL → PG (persistence) -->
+        <mxCell id="CN_VOL_PG" value="persists" style="edgeStyle=orthogonalEdgeStyle;exitX=0.5;exitY=0;entryX=0.5;entryY=1;strokeColor=#b85450;dashed=1;fontSize=8;" edge="1" source="VOL" target="T_REC" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

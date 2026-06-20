@@ -3,7 +3,8 @@ CREATE TABLE IF NOT EXISTS vehicles (
     vehicle_code VARCHAR(50) UNIQUE NOT NULL,
     brand        VARCHAR(50),
     model        VARCHAR(50),
-    plate_number VARCHAR(20)
+    plate_number VARCHAR(20),
+    is_depot     BOOLEAN NOT NULL DEFAULT FALSE
 );
 
 CREATE TABLE IF NOT EXISTS vehicle_telemetry (
@@ -22,7 +23,11 @@ CREATE TABLE IF NOT EXISTS vehicle_telemetry (
     battery_current_a  FLOAT,
     acceleration_ms2   FLOAT,
     ambient_temp_c     FLOAT,
-    power_kw           FLOAT
+    power_kw           FLOAT,
+    ad_mode            VARCHAR(20) DEFAULT 'AUTONOMOUS',
+    camera_blinded     BOOLEAN DEFAULT FALSE,
+    sensor_array_status VARCHAR(20) DEFAULT 'OK',
+    sensor_fault_code  VARCHAR(50)
 );
 
 CREATE TABLE IF NOT EXISTS lstm_predictions (
@@ -40,7 +45,7 @@ CREATE TABLE IF NOT EXISTS geofence_events (
     lat         FLOAT,
     lon         FLOAT,
     distance_m  FLOAT,
-    created_at  TIMESTAMP DEFAULT NOW()
+    timestamp   TIMESTAMP DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS depot_recommendations (
@@ -54,10 +59,10 @@ CREATE TABLE IF NOT EXISTS depot_recommendations (
     created_at          TIMESTAMP DEFAULT NOW()
 );
 
-INSERT INTO vehicles (vehicle_code, brand, model, plate_number) VALUES
-    ('Tesla_01',   'Tesla',   'Model 3', 'AA 1234 BC'),
-    ('Hyundai_01', 'Hyundai', 'Ioniq 6', 'KA 5678 MH'),
-    ('Tesla_02',   'Tesla',   'Model 3', 'AA 9012 DE'),
-    ('VW_01',      'VW',      'ID.4',    'KA 3456 PO'),
-    ('Hyundai_02', 'Hyundai', 'Ioniq 6', 'AA 7890 XY')
+INSERT INTO vehicles (vehicle_code, brand, model, plate_number, is_depot) VALUES
+    ('Tesla_01',   'Tesla',   'Model 3', 'AA 1234 BC', TRUE),
+    ('Hyundai_01', 'Hyundai', 'Ioniq 6', 'KA 5678 MH', FALSE),
+    ('Tesla_02',   'Tesla',   'Model 3', 'AA 9012 DE', FALSE),
+    ('VW_01',      'VW',      'ID.4',    'KA 3456 PO', FALSE),
+    ('Hyundai_02', 'Hyundai', 'Ioniq 6', 'AA 7890 XY', TRUE)
 ON CONFLICT (vehicle_code) DO NOTHING;

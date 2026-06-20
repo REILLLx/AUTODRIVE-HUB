@@ -1,15 +1,16 @@
 <template>
   <div class="scroll-list">
     <div v-if="!recommendations.length" class="no-data">✓ Рекомендацій немає</div>
+
     <div
-      v-for="r in recommendations"
+      v-for="r in sorted"
       :key="r.vehicle_id + r.timestamp"
       class="crec-item"
       :class="`crec-${r.level}`"
     >
       <div class="crec-top">
         <span :class="`crec-vid-${r.level}`">{{ icons[r.level] }} {{ r.vehicle_id }}</span>
-        <span class="crec-ts">{{ new Date(r.timestamp).toLocaleTimeString('uk-UA') }}</span>
+        <span class="crec-ts">{{ r.timestamp ? new Date(r.timestamp).toLocaleTimeString('uk-UA') : '—' }}</span>
       </div>
       <div class="crec-msg">{{ r.message }}</div>
       <div v-if="r.detail" class="crec-detail">{{ r.detail }}</div>
@@ -18,7 +19,16 @@
 </template>
 
 <script setup>
-defineProps({ recommendations: { type: Array, default: () => [] } })
+import { computed } from 'vue'
+
+const props = defineProps({ recommendations: { type: Array, default: () => [] } })
+
+const levelOrder = { critical: 0, warning: 1, info: 2 }
+const sorted = computed(() =>
+  [...props.recommendations].sort((a, b) =>
+    (levelOrder[a.level] ?? 3) - (levelOrder[b.level] ?? 3)
+  )
+)
 
 const icons = { critical: '🚨', warning: '⚠️', info: 'ℹ️' }
 </script>

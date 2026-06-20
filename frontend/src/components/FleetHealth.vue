@@ -35,8 +35,8 @@
     </div>
 
     <div class="fh-weights">
-      <span>SOC 30%</span><span>SOH 25%</span><span>Темп 20%</span>
-      <span>Гальма 15%</span><span>Помилки 10%</span>
+      <span>SOC 25%</span><span>SOH 20%</span><span>Темп 15%</span>
+      <span>Гальма 15%</span><span>Помилки 10%</span><span>Сенсори 15%</span>
     </div>
   </div>
 </template>

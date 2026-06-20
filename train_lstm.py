@@ -2,7 +2,8 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.preprocessing import MinMaxScaler
-from sklearn.metrics import mean_absolute_error, r2_score
+from sklearn.metrics import mean_absolute_error
+from math import sqrt
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dense, Dropout
 from tensorflow.keras.callbacks import EarlyStopping
@@ -114,7 +115,8 @@ history = model.fit(
 
 predictions = model.predict(X_test, verbose=0)
 mae = mean_absolute_error(y_test, predictions)
-r2  = r2_score(y_test, predictions)
+mse = np.mean((y_test - predictions[:,0]) ** 2)
+rmse = sqrt(mse)
 
 dummy      = np.zeros((len(predictions), len(FEATURES)))
 dummy[:,0] = predictions[:,0]
@@ -124,13 +126,15 @@ dummy2      = np.zeros((len(y_test), len(FEATURES)))
 dummy2[:,0] = y_test
 real_soc    = scaler.inverse_transform(dummy2)[:,0]
 
-mae_real = mean_absolute_error(real_soc, pred_real)
+mae_real  = mean_absolute_error(real_soc, pred_real)
+rmse_real = sqrt(np.mean((real_soc - pred_real) ** 2))
 
 print("\n" + "="*50)
 print("📈 РЕЗУЛЬТАТИ:")
 print(f"   MAE (нормалізований):  {mae:.5f}")
 print(f"   MAE (реальний SOC %):  {mae_real:.3f}%")
-print(f"   R² Score:              {r2:.5f}")
+print(f"   RMSE (нормалізований): {rmse:.5f}")
+print(f"   RMSE (реальний SOC %): {rmse_real:.3f}%")
 print(f"   Прогноз на:            1 година вперед")
 print("="*50)
 
@@ -169,7 +173,7 @@ if len(X_vis) > 0:
     axes[1].plot(pred_soc_vis[:n_show],  label='Прогноз LSTM',
                  linewidth=1.5, alpha=0.9, linestyle='--')
     axes[1].set_title(f'VW_01 (test set): Прогноз на 1 год вперед\n'
-                      f'MAE = {mae_real:.2f}%,  R² = {r2:.4f}')
+                      f'MAE = {mae_real:.2f}%,  RMSE = {rmse_real:.2f}%')
     axes[1].set_xlabel('Крок (тестова вибірка)')
     axes[1].set_ylabel('SOC (%)')
     axes[1].legend()

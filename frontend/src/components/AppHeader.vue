@@ -68,8 +68,19 @@ async function togglePause() {
 }
 
 async function clearDb() {
-  if (!confirm('Очистити всі таблиці телеметрії? Цю дію неможливо скасувати.')) return
-  await fetch('/api/db/clear', { method: 'POST' })
+  if (!confirm('Очистити всі таблиці телеметрії? Симуляцію буде зупинено. Цю дію неможливо скасувати.')) return
+  try {
+    const r = await fetch('/api/db/clear', { method: 'POST' })
+    if (r.ok) {
+      simRunning.value = false
+      simPaused.value  = false
+      alert('БД очищено. Можна запускати симуляцію знову.')
+    } else {
+      alert('Помилка при очищенні БД.')
+    }
+  } catch {
+    alert('Не вдалось зʼєднатись з сервером.')
+  }
 }
 
 let clockTimer, statusTimer

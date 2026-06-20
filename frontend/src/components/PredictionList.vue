@@ -1,10 +1,10 @@
 <template>
   <div class="scroll-list">
     <div v-if="!predictions.length" class="no-data">Прогнозів ще немає</div>
-    <div v-for="p in predictions" :key="p.vehicle_id + p.timestamp" class="pred-item">
+    <div v-for="p in predictions" :key="p.vehicle_id + p.predicted_at" class="pred-item">
       <div class="pred-top">
         <span class="pred-vid">{{ p.vehicle_id }}</span>
-        <span class="pred-ts">{{ new Date(p.timestamp).toLocaleTimeString('uk-UA') }}</span>
+        <span class="pred-ts">{{ new Date(p.predicted_at).toLocaleTimeString('uk-UA') }}</span>
       </div>
       <div class="pred-values">
         <div class="pred-box">
